@@ -36,18 +36,24 @@ func colorize(color, s string) string {
 type walkInfo struct {
 	dirty int
 	clean int
-	ignoreDirs
+	ignoredDirs
 }
 
-func (wi *walkInfo) walkDirFunc() fs.WalkDirFunc {
+func newWalkInfo(i ignoredDirs) *walkInfo {
+	return &walkInfo{
+		ignoredDirs: i,
+	}
+}
+
+func (i *walkInfo) walkDirFunc() fs.WalkDirFunc {
 	return func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		i := sort.SearchStrings(wi.ignoreDirs, d.Name())
-		if i < len(wi.ignoreDirs) && wi.ignoreDirs[i] == d.Name() {
+		if i.ignoredDirs.check(d.Name()) {
 			return fs.SkipDir
 		}
+
 		if d.Name() == ".git" {
 			dir := filepath.Dir(path)
 			cmd := exec.Command("git", "status", "-s")
@@ -55,10 +61,10 @@ func (wi *walkInfo) walkDirFunc() fs.WalkDirFunc {
 			out, err := cmd.CombinedOutput()
 			if len(out) > 0 {
 				fmt.Printf("%q:\n%s", dir, colorize(colorRed, string(out)))
-				wi.dirty++
+				i.dirty++
 			} else {
 				fmt.Printf("%q: %v\n", dir, colorize(colorGreen, "clean"))
-				wi.clean++
+				i.clean++
 			}
 			if err != nil {
 				return err
@@ -69,21 +75,29 @@ func (wi *walkInfo) walkDirFunc() fs.WalkDirFunc {
 	}
 }
 
-type ignoreDirs []string
+type ignoredDirs []string
 
-func (d *ignoreDirs) String() string {
-	return strings.Join(*d, ", ")
+func (i *ignoredDirs) String() string {
+	return strings.Join(*i, ",")
 }
 
-func (d *ignoreDirs) Set(s string) error {
-	*d = strings.Split(s, ",")
-	sort.StringSlice(*d).Sort()
+func (i *ignoredDirs) Set(s string) error {
+	*i = strings.Split(s, ",")
+	sort.StringSlice(*i).Sort()
 	return nil
 }
 
+func (i *ignoredDirs) check(dir string) bool {
+	j := sort.SearchStrings(*i, dir)
+	if j < len(*i) && (*i)[j] == dir {
+		return true
+	}
+	return false
+}
+
 func main() {
-	var ids ignoreDirs
-	flag.Var(&ids, "ignore", "comma-separated list of directories to ignore")
+	var ignored ignoredDirs
+	flag.Var(&ignored, "ignore", "comma-separated list of directories to ignore")
 	flag.Parse()
 
 	dirs := flag.Args()
@@ -96,7 +110,7 @@ func main() {
 	}
 
 	for _, d := range dirs {
-		wi := &walkInfo{ignoreDirs: ids}
+		wi := newWalkInfo(ignored)
 		if err := filepath.WalkDir(d, wi.walkDirFunc()); err != nil {
 			log.Fatal(err)
 		}
