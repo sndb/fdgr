@@ -26,8 +26,12 @@ const (
 	colorWhite  = "\033[97m"
 )
 
+var noColor bool
+
 func colorize(color, s string) string {
-	if runtime.GOOS == "windows" {
+	switch {
+	case runtime.GOOS == "windows":
+	case noColor:
 		return s
 	}
 	return color + s + colorReset
@@ -98,6 +102,7 @@ func (i *ignoredDirs) check(dir string) bool {
 func main() {
 	var ignored ignoredDirs
 	flag.Var(&ignored, "ignore", "comma-separated list of directories to ignore")
+	flag.BoolVar(&noColor, "no-color", false, "disable colored output")
 	flag.Parse()
 
 	dirs := flag.Args()
